@@ -3,23 +3,46 @@ Getting Started
 ===============
 
 .. contents:: Table of Contents
-    :depth: 3
+    :depth: 2
     :local:
-
-
 
 Quick-Start Guide
 -----------------
 
+1. :any:`docker images`
+2. :any:`run from source`
 
-Installation
-------------
+.. _docker images:
+
+Running with Docker
+-------------------
+
+Docker images are offered on the `ElasticHQ Dockerhub <https://hub.docker.com/r/elastichq/elasticsearch-hq/>`_.
+
+Run with:
+
+.. code-block:: bash
+
+    docker run -p 5000:5000 elastichq/elasticsearch-hq
+
+Access HQ with: http://localhost:5000
+
+When starting with Docker, see :any:`environment variables` for passing startup args. Environment variables are passed to docker using the `-e` flag.
+
+ie. ``-e HQ_DEFAULT_URL='http://aa.com:1212'``
+
+.. note:: The ``latest`` tag deploys the latest stable release. Where ``develop`` is the latest unstable working branch.
+
+.. _run from source:
+
+Install from Source
+-------------------
 
 Requirements
 ^^^^^^^^^^^^
 
 * Python 3.4+
-* Elasticsearch. Supported versions: 2.x, 5.x, 6.x
+* Elasticsearch. Supported versions: 2.x, 5.x, 6.x, 7.x
 
 Install ElasticHQ
 ^^^^^^^^^^^^^^^^^
@@ -31,24 +54,6 @@ Install ElasticHQ
 
 .. note:: Alternatively, you can start the server with ``python manage.py runserver``
 
-.. _docker images:
-
-Docker Images
-^^^^^^^^^^^^^
-
-Docker images are offered on the `ElasticHQ Dockerhub <https://hub.docker.com/r/elastichq/elasticsearch-hq/>`_.
-
-The ``latest`` tag deploys the latest stable release. Where ``develop`` is the latest unstable working branch.
-
-When starting with Docker, see :any:`environment variables` for passing startup args. Environment variables are passed to docker using the `-e` flag.
-
-ie. ``-e HQ_DEFAULT_URL='http://aa.com:1212'``
-
-To run/install container:
-
-``docker run -p 5000:5000 elastichq/elasticsearch-hq``
-
-Access HQ with: http://localhost:5000
 
 Pre-Releases
 ^^^^^^^^^^^^
@@ -84,36 +89,57 @@ The input field takes a url in the form of: ``http://DOMAIN:PORT``
 Configuration
 -------------
 
+.. _command line parameters:
+
 Command line Parameters
 ^^^^^^^^^^^^^^^^^^^^^^^
 
 The ``application.py`` start script takes parameters passed in as arguments from the command line:
 
-    ================ =========================  ====================================================================
-    Arg               Default Value              Definition
-    ================ =========================  ====================================================================
-    ``--host``       127.0.0.1                  Host the HQ server should be reachable on.
-    ``--port``       5000                       Port to reach HQ server.
-    ``--debug``      False                      If True, exposes debug data to UI and causes reload on code changes.
-    ``--url``        ``http://localhost:9200``  Default URL displayed on the initial connection screen.
-    ``--enable-ssl`` False                      If flag is passed, assumes ssl cert will be used.
-    ``--ca-certs``   /path/to/your/ca.crt       Path to your CA Certificate. Required if enable-ssl is passed.
-    ================ =========================  ====================================================================
+    ==================  =========================  ================================================================================
+    Arg                 Default Value              Definition
+    ==================  =========================  ================================================================================
+    ``--host``          127.0.0.1                  Host the HQ server should be reachable on.
+    ``--port``          5000                       Port to reach HQ server.
+    ``--debug``         False                      If True, exposes debug data to UI and causes reload on code changes.
+    ``--url``           ``http://localhost:9200``  Default URL displayed on the initial connection screen.
+    ``--enable-ssl``    False                      If flag is passed, assumes ssl cert will be used.
+    ``--ca-certs``      /path/to/your/ca.crt       Path to your CA Certificate. Required if enable-ssl is passed.
+    ``--verify_certs``  True                       Whether HQ should attempt to validate certs. Set to False for self-signed certs.
+    ==================  =========================  ================================================================================
+
+Example:
+========
+
+.. code-block:: bash
+
+    python -m application
+    --enable-ssl
+    --ca-certs /path/to/your/ca.crt
 
 .. _environment variables:
 
 Environment Variables
 ^^^^^^^^^^^^^^^^^^^^^
 
-    ==================  =========================  ====================================================================
-    Arg                 Default Value              Definition
-    ==================  =========================  ====================================================================
-    ``HQ_DEFAULT_URL``  ``http://localhost:9200``  Default URL displayed on the initial connection screen.
-    ``HQ_ENABLE_SSL``   False                      If flag is passed, assumes ssl cert will be used.
-    ``HQ_CA_CERTS``     /path/to/your/ca.crt       Path to your CA Certificate. Required if enable-ssl is passed.
-    ``HQ_DEBUG``        False                      If True, enables debug level on logging.
-    ==================  =========================  ====================================================================
+    ===================  =========================  ================================================================================
+    Arg                  Default Value              Definition
+    ===================  =========================  ================================================================================
+    ``HQ_DEFAULT_URL``   ``http://localhost:9200``  Default URL displayed on the initial connection screen.
+    ``HQ_ENABLE_SSL``    False                      If flag is passed, assumes ssl cert will be used.
+    ``HQ_CA_CERTS``      /path/to/your/ca.crt       Path to your CA Certificate. Required if enable-ssl is passed.
+    ``HQ_VERIFY_CERTS``  True                       Whether HQ should attempt to validate certs. Set to False for self-signed certs.
+    ``HQ_DEBUG``         False                      If True, enables debug level on logging.
+    ===================  =========================  ================================================================================
 
+Example:
+========
+
+.. code-block:: bash
+
+    docker run -p 5000:5000 elastichq/elasticsearch-hq
+    -e HQ_DEFAULT_URL='http://aa.com:1212'
+    -e HQ_ENABLE_SSL=False
 
 Logging
 ^^^^^^^
@@ -132,7 +158,8 @@ Thanks to a community contribution, SSL Cert support has been added: `SSL Suppor
 Enable SSL Cert support by starting HQ as so:
 
 ``python -m application --enable-ssl --ca-certs /path/to/your/ca.crt``
- 
+
+.. note:: When using self-signed certs, you must disable certificate verification. See: :any:`command line parameters` or :any:`environment variables`
 
 Database
 ^^^^^^^^
@@ -236,7 +263,7 @@ Failure in connecting initially to an Elasticsearch cluster, can happen for seve
 * **Basic Authentication:** If you did not enter in the security credentials in the connection URL, HQ will fail to connect. The proper format is ``http://USERNAME:PASSWORD@DOMAIN:PORT``
 * **X-Pack License Expiration:** X-Pack comes with a #-day license that will silently expire. Expiration of the license may cause connectivity issues, so it is advised to either purchase an X-Pack license or uninstall X-Pack.
 * **No Route to ES cluster:** Confirm that the server running HQ has access to ES via network. You can do this by calling ES from within a terminal window on the HQ server, with a ``curl -XGET http://DOMAIN:PORT``.
-
+* **CERTIFICATE_VERIFY_FAILED:** If you see this error in the log, you are most likely using a self-signed cert and did not set validate_certs variable to false. See: :any:`command line parameters` or :any:`environment variables`
 
 .. _xpack integration:
 

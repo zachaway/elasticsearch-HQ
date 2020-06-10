@@ -6,10 +6,11 @@ import urllib
 import requests
 from requests.exceptions import ConnectionError
 
+from elastichq.common.utils import string_to_bool
 from elastichq.model import ClusterModel
 from elastichq.service.persistence import ClusterDBService
 from ..globals import CONNECTIONS, LOG, REQUEST_TIMEOUT
-from ..vendor.elasticsearch import Elasticsearch
+from ..vendor.elasticsearch import Elasticsearch, RequestsHttpConnection
 from ..vendor.elasticsearch.connections import ConnectionNotFoundException
 
 
@@ -35,17 +36,30 @@ class ConnectionService:
         except Exception as e:
             return False
 
-    def create_connection(self, ip, port, scheme='http', username=None, password=None,
-                          fail_on_exception=False, enable_ssl=False, ca_certs=None):
+    def create_connection(self, ip, port, scheme='http', username=None, password=None, fail_on_exception=False,
+                          enable_ssl=False, ca_certs=None, verify_certs=True, client_cert=None, client_key=None):
         """
-        Creates a connection with a cluster and place the connection inside of a connection pool, using the cluster_name as an alias.
-        :param ip: 
+        Creates a connection with a cluster and place the connection inside of a connection pool, using the
+        cluster_name as an alias.
+        :param client_cert:
+        :param client_key:
+        :param verify_certs:
+        :param ip:
         :param port: 
         :param scheme:
         :param fail_on_exception: If we should raise an exception on a failed connection
+        :param ca_certs: Frome the requests docs: "verify: (optional) Either a boolean, in which case it controls
+        whether we verify
+            the server's TLS certificate, or a string, in which case it must be a path
+            to a CA bundle to use. Defaults to ``True``."
         :return:
         """
         try:
+            verify_certs = string_to_bool(verify_certs)
+            enable_ssl = string_to_bool(enable_ssl)
+            LOG.info('Verify: ' + str(verify_certs))
+            LOG.info('Cert File: ' + str(ca_certs))
+
             is_basic_auth = False
 
             # clean the params
@@ -56,22 +70,44 @@ class ConnectionService:
                 is_basic_auth = True
                 password = urllib.parse.unquote(password)
 
-            # determine version first
+            client_cert_credentials = None if client_cert is None or client_key is None else (client_cert, client_key)
+
             if is_basic_auth is True:
+                LOG.info("Basic Auth is True")
                 if enable_ssl:
-                    response = requests.get(scheme + "://" + ip + ":" + port, auth=(username, password),
-                                            timeout=REQUEST_TIMEOUT, verify=ca_certs)
+                    LOG.info("SSL enabled")
+                    if verify_certs is False:
+                        LOG.info("Verify Certs is False")
+                        response = requests.get(scheme + "://" + ip + ":" + port, auth=(username, password),
+                                                timeout=REQUEST_TIMEOUT, verify=False,
+                                                cert=client_cert_credentials)
+                    else:
+                        LOG.info("Verify Certs is True")
+                        response = requests.get(scheme + "://" + ip + ":" + port, auth=(username, password),
+                                                timeout=REQUEST_TIMEOUT, verify=ca_certs, cert=client_cert_credentials)
                 else:
+                    LOG.info("SSL disabled")
                     response = requests.get(scheme + "://" + ip + ":" + port, auth=(username, password),
                                             timeout=REQUEST_TIMEOUT)
             else:
+                LOG.info("Basic Auth is False")
                 if enable_ssl:
-                    response = requests.get(scheme + "://" + ip + ":" + port, timeout=REQUEST_TIMEOUT, verify=ca_certs)
+                    LOG.info("SSL enabled")
+                    if verify_certs is False:
+                        LOG.info("Verify Certs is False")
+                        response = requests.get(scheme + "://" + ip + ":" + port, timeout=REQUEST_TIMEOUT,
+                                                verify=False, cert=client_cert_credentials)
+                    else:
+                        LOG.info("Verify Certs is True")
+                        response = requests.get(scheme + "://" + ip + ":" + port, timeout=REQUEST_TIMEOUT,
+                                                verify=ca_certs, cert=client_cert_credentials)
                 else:
+                    LOG.info("SSL disabled")
                     response = requests.get(scheme + "://" + ip + ":" + port, timeout=REQUEST_TIMEOUT)
 
             if response.status_code == 401:
-                message = "Unable to create connection! Server returned 401 - UNAUTHORIZED: " + scheme + "://" + ip + ":" + port
+                message = "Unable to create connection! Server returned 401 - UNAUTHORIZED: " + scheme + "://" + ip + \
+                          ":" + port
                 raise ConnectionNotAuthorized(message=message)
 
             content = json.loads(response.content.decode('utf-8'))
@@ -79,18 +115,38 @@ class ConnectionService:
             # SAVE to Connection Pools
             if is_basic_auth is True:
                 if enable_ssl:
-                    conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
-                                         use_ssl=True, verify_certs=True, ca_certs=ca_certs,
-                                         version=content.get('version').get('number'), http_auth=(username, password))
+                    if verify_certs is False:
+                        LOG.info("Verify Certs is False")
+                        conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
+                                             use_ssl=True, verify_certs=False,
+                                             version=content.get('version').get('number'),
+                                             http_auth=(username, password), connection_class=RequestsHttpConnection)
+                    else:
+                        LOG.info("Verify Certs is True")
+                        conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
+                                             use_ssl=True, verify_certs=ca_certs, ca_certs=ca_certs,
+                                             version=content.get('version').get('number'),
+                                             http_auth=(username, password),
+                                             client_cert=client_cert, client_key=client_key)
+
                 else:
                     conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
                                          version=content.get('version').get('number'), http_auth=(username, password))
 
             else:
                 if enable_ssl:
-                    conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
-                                         use_ssl=True, verify_certs=True, ca_certs=ca_certs,
-                                         version=content.get('version').get('number'))
+                    if verify_certs is False:
+                        LOG.info("Verify Certs is False")
+                        conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
+                                             use_ssl=True, verify_certs=False,
+                                             version=content.get('version').get('number'),
+                                             connection_class=RequestsHttpConnection)
+                    else:
+                        LOG.info("Verify Certs is False")
+                        conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
+                                             use_ssl=True, verify_certs=ca_certs, ca_certs=ca_certs,
+                                             version=content.get('version').get('number'),
+                                             client_cert=client_cert, client_key=client_key)
                 else:
                     conn = Elasticsearch(hosts=[scheme + "://" + ip + ":" + port], maxsize=5,
                                          version=content.get('version').get('number'))
@@ -140,10 +196,12 @@ class ConnectionService:
 
     def get_connection(self, cluster_name, create_if_missing=True):
         """
-        Interface for cluster connection pool object. If a connection does not exist, it will attempt to create it, using what is stored in the database. If it cannot find the connection 
+        Interface for cluster connection pool object. If a connection does not exist, it will attempt to create it,
+        using what is stored in the database. If it cannot find the connection
         or cannot create one from the database, it will throw a ConnectionNotFoundException
-        :param cluster_name: 
-        :param create_if_missing: Will create the connection in the connection pool AND the persistence layer if it does not exist.
+        :param cluster_name:
+        :param create_if_missing: Will create the connection in the connection pool AND the persistence layer if it
+        does not exist.
         :return:
         """
         try:
